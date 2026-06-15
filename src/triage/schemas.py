@@ -103,6 +103,12 @@ class Decision(BaseModel):
     safe_to_auto_route: bool
 
 
+# Sentinel for an unresolvable specialty — used by the classifier and checked
+# by the policy gate. Defined here so policy.py and tests share one source of
+# truth rather than matching a bare string literal.
+UNKNOWN_SPECIALTY: str = "Unknown"
+
+
 class AuditRecord(BaseModel):
     """One letter's full journey (signals -> proposal -> decision), persisted as JSONL.
 
