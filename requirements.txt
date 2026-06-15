@@ -1,6 +1,11 @@
-# Requires Python 3.11+
-# (schemas.py uses PEP 604 `X | None` unions, which pydantic evaluates at
-#  runtime — these fail to import on 3.9/3.10-with-old-typing.)
-
-pydantic==2.13.4   # data contracts in schemas.py / rules.py (v2 API)
-pytest==9.1.0      # test runner for tests/test_rules.py
+annotated-types==0.7.0
+iniconfig==2.3.0
+packaging==26.2
+pluggy==1.6.0
+pydantic==2.13.4
+pydantic_core==2.46.4
+Pygments==2.20.0
+pytest==9.1.0
+PyYAML==6.0.3
+typing-inspection==0.4.2
+typing_extensions==4.15.0
