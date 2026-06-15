@@ -1,0 +1,92 @@
+[
+  {
+    "referral_id": "REF-001",
+    "source": "gp_email",
+    "gp_stated_priority": "ROUTINE",
+    "expected_specialty": "Dermatology",
+    "expected_priority": "ROUTINE",
+    "expected_decision": "AUTO_ROUTE",
+    "text": "Dear Dermatology Team, I would be grateful if you could review Mr. John Smith, a 54-year-old male, for a small skin tag on his right forearm. It has been present for approximately two years and is entirely asymptomatic. The patient finds it mildly cosmetically bothersome. There are no concerning features — no change in size, no bleeding, no pigment change. No red flags. Routine appointment would be appreciated. Many thanks, Dr. A. Patel, Newbury Surgery."
+  },
+  {
+    "referral_id": "REF-002",
+    "source": "gp_email",
+    "gp_stated_priority": "TWO_WEEK_WAIT",
+    "expected_specialty": "Dermatology",
+    "expected_priority": "TWO_WEEK_WAIT",
+    "expected_decision": "HUMAN_REVIEW",
+    "text": "Dear Dermatology, Urgent two-week wait referral for Ms. Jane Davies, 67-year-old female. She presents with a changing mole on her left shoulder that has been growing over the past three months. The lesion is now bleeding intermittently and has developed irregular borders and mixed pigmentation. I am very concerned this may represent melanoma. She has no relevant past medical history. Please review urgently. Dr. S. Okafor, Greenfields Practice."
+  },
+  {
+    "referral_id": "REF-003",
+    "source": "gp_email",
+    "gp_stated_priority": "ROUTINE",
+    "expected_specialty": "Colorectal",
+    "expected_priority": "TWO_WEEK_WAIT",
+    "expected_decision": "HUMAN_REVIEW",
+    "text": "Please see Mr. Robert Hughes, 72 years old, at your convenience. He has been having some loose stools lately. I have been monitoring him for a few months. Routine referral. Incidentally, he has also mentioned some rectal bleeding over the past six weeks and has lost around 6kg without trying. Dr. C. Brennan, Highfield Medical Centre."
+  },
+  {
+    "referral_id": "REF-004",
+    "source": "gp_email",
+    "gp_stated_priority": "URGENT",
+    "expected_specialty": "Gastroenterology",
+    "expected_priority": "URGENT",
+    "expected_decision": "HUMAN_REVIEW",
+    "text": "Referral for Mrs. Patricia Wong, 48-year-old female, with a six-week history of worsening epigastric pain, nausea, and difficulty swallowing. She has lost some weight but this may be related to reduced appetite secondary to pain. CT abdomen was unremarkable but symptoms persist. Could be gastro or possibly colorectal — not entirely clear. Her father had bowel cancer. Please advise on most appropriate team. Marked urgent. Dr. F. Mehta, Central Surgery."
+  },
+  {
+    "referral_id": "REF-005",
+    "source": "gp_email",
+    "gp_stated_priority": null,
+    "expected_specialty": null,
+    "expected_priority": null,
+    "expected_decision": "EXCEPTION",
+    "text": "Please see patient."
+  },
+  {
+    "referral_id": "REF-006",
+    "source": "gp_email",
+    "gp_stated_priority": null,
+    "expected_specialty": null,
+    "expected_priority": null,
+    "expected_decision": "EXCEPTION",
+    "text": "Hi Sarah, just a reminder that the staff rota for August needs to be submitted by Friday. Also the payroll deadline is the 28th. Can you make sure the holiday requests are signed off before then? Thanks, Dr. B. Clarke."
+  },
+  {
+    "referral_id": "REF-007",
+    "source": "gp_email",
+    "gp_stated_priority": "URGENT",
+    "expected_specialty": "Gastroenterology",
+    "expected_priority": "URGENT",
+    "expected_decision": "HUMAN_REVIEW",
+    "text": "Urgent referral for Mr. Daniel Osei, 61-year-old male, with a four-week history of worsening abdominal pain, bloating, and change in bowel habit. He is opening his bowels three to four times daily. He feels generally unwell and has noticed some weight loss over the past month. No frank rectal bleeding. I would like him seen urgently to rule out a significant gastrointestinal cause. Dr. P. Nair, Riverside Practice."
+  },
+  {
+    "referral_id": "REF-008",
+    "source": "gp_email",
+    "gp_stated_priority": "ROUTINE",
+    "expected_specialty": "Cardiology",
+    "expected_priority": "ROUTINE",
+    "expected_decision": "AUTO_ROUTE",
+    "text": "Dear Cardiology, I would be grateful for a routine outpatient review of Mrs. Susan Fletcher, 63-year-old female, with known stable angina managed on bisoprolol and aspirin. Her symptoms are well controlled and she has not had any recent admissions. ECG from last month was unchanged. She is due her annual cardiology follow-up and I am happy for this to be a routine appointment. No new symptoms, no chest pain at rest, no breathlessness at rest. Dr. T. Adeyemi, Westbrook Surgery."
+  },
+  {
+    "referral_id": "REF-009",
+    "source": "gp_email",
+    "gp_stated_priority": "ROUTINE",
+    "expected_specialty": "Gastroenterology",
+    "expected_priority": "URGENT",
+    "expected_decision": "HUMAN_REVIEW",
+    "text": "Referral for Mr. Kevin Marsh, 55-year-old male. He has a background of irritable bowel syndrome and has been having a flare of symptoms over the past two months, including abdominal cramping and alternating bowel habit. I have marked this routine as his IBS is longstanding. However, he also reports some shortness of breath on exertion over the last three weeks which is new, and chest pain on one occasion last week. I am uncertain whether these are related. Dr. L. Chen, Parkside Clinic."
+  },
+  {
+    "referral_id": "REF-010",
+    "source": "gp_email",
+    "gp_stated_priority": "ROUTINE",
+    "expected_specialty": "Dermatology",
+    "expected_priority": "ROUTINE",
+    "expected_decision": "HUMAN_REVIEW",
+    "text": "Referral for Ms. Aisha Thornton, 34-year-old female, with a rash on her torso. The rash has been present for approximately six weeks and is mildly itchy. She has tried over-the-counter hydrocortisone with partial benefit. I think this is likely eczema but wanted a specialist opinion. No systemic symptoms. No fever. Routine appointment please. Dr. G. Kovacs, Elm Street Surgery."
+  }
+]
