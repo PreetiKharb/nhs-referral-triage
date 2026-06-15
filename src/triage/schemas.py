@@ -104,7 +104,12 @@ class Decision(BaseModel):
 
 
 class AuditRecord(BaseModel):
-    """One letter's full journey (signals -> proposal -> decision), persisted as JSONL."""
+    """One letter's full journey (signals -> proposal -> decision), persisted as JSONL.
+
+    Version fields have no defaults — audit.py must pass the versions that were
+    actually loaded at runtime. A default here would let a stale stamp silently
+    disagree with the config that produced the decision, breaking replay.
+    """
 
     referral_id: str
     timestamp: str
@@ -112,6 +117,6 @@ class AuditRecord(BaseModel):
     signals: ClinicalSignals
     proposal: Proposal
     decision: Decision
-    pipeline_version: str = "poc-v0.1"
-    ruleset_version: str = "rules-v0.1"
-    threshold_version: str = "thresholds-v0.1"
+    pipeline_version: str
+    ruleset_version: str
+    threshold_version: str
