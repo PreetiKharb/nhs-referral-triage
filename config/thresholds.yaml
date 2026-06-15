@@ -1,0 +1,10 @@
+version: thresholds-v0.1
+
+# Minimum confidence for each pipeline stage to allow AUTO_ROUTE.
+# Below any of these thresholds the case goes to HUMAN_REVIEW.
+# These are asserted starting values, not calibrated ones — calibration
+# requires a labelled holdout set and is explicitly out of scope for this POC.
+
+min_extraction_confidence: 0.70
+min_specialty_confidence: 0.80
+min_priority_confidence: 0.80
