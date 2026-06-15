@@ -1,0 +1,6 @@
+# Requires Python 3.11+
+# (schemas.py uses PEP 604 `X | None` unions, which pydantic evaluates at
+#  runtime — these fail to import on 3.9/3.10-with-old-typing.)
+
+pydantic==2.13.4   # data contracts in schemas.py / rules.py (v2 API)
+pytest==9.1.0      # test runner for tests/test_rules.py
