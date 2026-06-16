@@ -10,6 +10,7 @@ in policy.py so the audit stamp always reflects what actually ran.
 from __future__ import annotations
 
 from triage.audit import append_audit_record, create_audit_record
+from triage.canonicalize import canonicalize_signals
 from triage.classify import classify
 from triage.extract import extract_signals
 from triage.policy import PIPELINE_VERSION, RULESET_VERSION, apply_policy, load_thresholds
@@ -32,6 +33,7 @@ def process_referral(
         thresholds = load_thresholds()
 
     signals = extract_signals(referral, backend=backend)
+    signals = canonicalize_signals(signals)  # controlled-vocab contract: see canonicalize.py
     proposal = classify(signals)
     decision = apply_policy(referral, signals, proposal, thresholds)
 
