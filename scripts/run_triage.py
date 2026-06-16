@@ -22,6 +22,7 @@ from pathlib import Path
 # Allow running from the project root without installing the package.
 sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
 
+from triage.metrics import TriageMetrics
 from triage.pipeline import process_referral
 from triage.policy import load_thresholds
 from triage.schemas import ReferralInput
@@ -33,6 +34,11 @@ def main() -> None:
         "--real",
         action="store_true",
         help="Use the real Claude extraction backend (falls back to mock if no API key).",
+    )
+    parser.add_argument(
+        "--stats",
+        action="store_true",
+        help="Print an observability report (routing mix, distributions, abstention reasons).",
     )
     args = parser.parse_args()
     backend = "llm" if args.real else "mock"
@@ -52,13 +58,15 @@ def main() -> None:
     print("-" * 100)
 
     counts: dict[str, int] = {"AUTO_ROUTE": 0, "HUMAN_REVIEW": 0, "EXCEPTION": 0}
+    metrics = TriageMetrics()
 
     for raw in letters:
         referral = ReferralInput(**{
             k: v for k, v in raw.items()
             if k in ReferralInput.model_fields
         })
-        _, _, decision, _ = process_referral(referral, thresholds, backend=backend)
+        signals, proposal, decision, _ = process_referral(referral, thresholds, backend=backend)
+        metrics.observe(signals, proposal, decision)
 
         specialty = decision.recommended_specialty or "—"
         priority = decision.recommended_priority.value if decision.recommended_priority else "—"
@@ -80,6 +88,10 @@ def main() -> None:
           f"HUMAN_REVIEW: {counts['HUMAN_REVIEW']}  |  "
           f"EXCEPTION: {counts['EXCEPTION']}")
     print("Audit log → audit_log.jsonl")
+
+    if args.stats:
+        print()
+        print(metrics.render())
 
 
 if __name__ == "__main__":
