@@ -17,6 +17,7 @@ from triage.rules import (
     is_non_referral,
     is_too_short,
     priority_max,
+    red_flag_evidence_phrases,
     red_flag_priority_floor,
 )
 from triage.schemas import Priority
@@ -126,6 +127,29 @@ def test_clean_letter_no_red_flags():
         "No change in size, no bleeding, no pigment change."
     )
     assert detect_red_flags(text) == []
+
+
+# ---------------------------------------------------------------------------
+# red_flag_evidence_phrases — the surface phrase that matched, so callers can
+# quote real letter text as evidence (no invented evidence). The canonical flag
+# name often differs from the surface form ("breathlessness" -> "shortness of
+# breath"), so quoting the canonical name would fabricate a non-quote.
+# ---------------------------------------------------------------------------
+
+def test_evidence_phrase_is_present_in_text_for_synonym():
+    text = "She has new breathlessness on climbing stairs."
+    phrases = red_flag_evidence_phrases(text)
+    assert phrases["shortness of breath"] == "breathlessness"
+    assert phrases["shortness of breath"] in text.lower()
+
+
+def test_evidence_phrase_keys_match_detect_red_flags():
+    text = "He reports rectal bleeding and has lost weight without trying."
+    assert sorted(red_flag_evidence_phrases(text)) == detect_red_flags(text)
+
+
+def test_evidence_phrase_empty_when_no_flags():
+    assert red_flag_evidence_phrases("Routine asymptomatic skin tag, no concerns.") == {}
 
 
 # ---------------------------------------------------------------------------
