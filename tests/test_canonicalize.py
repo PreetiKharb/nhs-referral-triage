@@ -9,7 +9,8 @@ from triage.canonicalize import (
     canonicalize_signals,
     canonicalize_specialty,
 )
-from triage.schemas import ClinicalSignals, ExtractedFact
+from triage.rules import red_flag_priority_floor
+from triage.schemas import ClinicalSignals, ExtractedFact, Priority
 
 
 def _fact(value: str) -> ExtractedFact:
@@ -72,6 +73,39 @@ def test_unmappable_symptom_kept_not_dropped():
     out = canonicalize_signals(_signals(symptoms=["some unrecognised finding"]))
     assert len(out.symptoms) == 1
     assert out.symptoms[0].value == "some unrecognised finding"
+
+
+# ---------------------------------------------------------------------------
+# Red flags map against the RED-FLAG vocabulary, not the symptom vocabulary.
+# Regression for the floor-stripping bug: the symptom vocab collapsed
+# "changing mole" -> "mole", and "mole" is not a 2WW flag name, so the
+# red-flag priority floor silently dropped from TWO_WEEK_WAIT to ROUTINE.
+# Canonical red-flag names must stay names rules.py owns.
+# ---------------------------------------------------------------------------
+
+def test_red_flag_changing_mole_not_collapsed_to_mole():
+    out = canonicalize_signals(_signals(red_flags=["changing mole"]))
+    assert out.red_flags[0].value == "changing mole"
+
+
+def test_red_flag_richer_mole_phrasing_maps_to_changing_mole():
+    out = canonicalize_signals(_signals(red_flags=["a changing mole on the left shoulder"]))
+    assert out.red_flags[0].value == "changing mole"
+
+
+def test_changing_mole_red_flag_preserves_two_week_wait_floor():
+    # The end-to-end point of the fix: after canonicalisation, rules.py must
+    # still recognise the flag and hold the 2WW floor.
+    out = canonicalize_signals(_signals(red_flags=["changing mole"]))
+    flag_values = [f.value for f in out.red_flags]
+    assert red_flag_priority_floor(flag_values) == Priority.TWO_WEEK_WAIT
+
+
+def test_red_flag_synonym_maps_without_losing_severity():
+    # "breathlessness" -> "shortness of breath" (an URGENT flag name).
+    out = canonicalize_signals(_signals(red_flags=["new breathlessness on exertion"]))
+    assert out.red_flags[0].value == "shortness of breath"
+    assert red_flag_priority_floor([out.red_flags[0].value]).rank >= Priority.URGENT.rank
 
 
 # ---------------------------------------------------------------------------
