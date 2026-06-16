@@ -52,7 +52,7 @@ python scripts/run_triage.py   # runs all 10 synthetic letters, writes audit_log
 python scripts/run_triage.py --real   # same pipeline, real Claude extraction (see note below)
 python scripts/run_triage.py --stats  # adds an observability report (routing mix, distributions)
 python scripts/run_eval.py     # scores predictions against gold labels
-pytest                         # 59 tests, all passing
+pytest                         # 72 tests, all passing
 ```
 
 The default (`mock`) backend is deterministic and offline. The `--real` flag
@@ -227,9 +227,9 @@ referral-triage-poc/
 ├── data/
 │   └── synthetic_letters.json   # 10 synthetic letters with gold labels
 └── tests/
-    ├── test_rules.py            # 28 tests — safety floor tested first
-    ├── test_policy.py           # 23 tests — written before policy.py
-    └── test_canonicalize.py     #  8 tests — controlled-vocab mapping
+    ├── test_rules.py            # safety floor tested first
+    ├── test_policy.py           # written before policy.py
+    └── test_canonicalize.py     # controlled-vocab mapping
 ```
 
 ## Design decisions worth noticing
