@@ -38,7 +38,7 @@ from __future__ import annotations
 import os
 import sys
 
-from triage.rules import detect_red_flags, is_non_referral, is_too_short
+from triage.rules import is_non_referral, is_too_short, red_flag_evidence_phrases
 from triage.schemas import ClinicalSignals, ExtractedFact, ReferralInput
 
 # Model used by the LLM backend. Structured outputs are GA on this model.
@@ -73,12 +73,24 @@ _GP_URGENCY_MAP: dict[str, str] = {
 
 
 def _find_span(text: str, phrase: str) -> str:
-    """Return a short evidence snippet around phrase in text."""
-    idx = text.lower().find(phrase.lower())
+    """Return a short evidence snippet quoted from text around phrase.
+
+    Callers pass a phrase known to occur in the letter. If the exact phrase is
+    not found as a substring (token-wise match across odd spacing/punctuation),
+    anchor on its first word so the snippet is still a real span of the letter —
+    never the bare phrase echoed back, which would be invented evidence.
+    """
+    lower = text.lower()
+    idx = lower.find(phrase.lower())
+    span_len = len(phrase)
     if idx == -1:
-        return phrase
+        first_word = phrase.split()[0]
+        idx = lower.find(first_word)
+        if idx == -1:
+            return phrase  # unreachable for a matched phrase; defensive only
+        span_len = len(first_word)
     start = max(0, idx - 20)
-    end = min(len(text), idx + len(phrase) + 60)
+    end = min(len(text), idx + span_len + 60)
     return text[start:end].strip()
 
 
@@ -103,10 +115,13 @@ def _extract_signals_mock(referral: ReferralInput) -> ClinicalSignals:
     if is_too_short(text) or is_non_referral(text):
         return ClinicalSignals(symptoms=[], red_flags=[], extraction_confidence=0.20)
 
-    flag_names = detect_red_flags(text)
+    # Quote the surface phrase that actually matched, not the canonical name —
+    # "breathlessness" -> "shortness of breath" would otherwise put a phrase in
+    # evidence_text that never appears in the letter. No fact without evidence.
+    flag_phrases = red_flag_evidence_phrases(text)
     red_flag_facts = [
-        ExtractedFact(value=name, evidence_text=_find_span(text, name), confidence=0.90)
-        for name in flag_names
+        ExtractedFact(value=name, evidence_text=_find_span(text, phrase), confidence=0.90)
+        for name, phrase in sorted(flag_phrases.items())
     ]
 
     symptoms = _extract_facts(text, _SYMPTOM_PHRASES)

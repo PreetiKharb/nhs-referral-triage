@@ -215,6 +215,116 @@ def test_red_flags_escalate_recommended_priority_above_routine():
     assert decision.recommended_priority.rank > Priority.ROUTINE.rank
 
 
+def test_red_flag_floor_runs_before_confidence_gate():
+    # Safety-first ordering: a red flag must surface in rules_fired even when a
+    # confidence gate would also have fired. Otherwise a sub-threshold-confidence
+    # red-flag case reports only "low confidence" and the flag is invisible in the
+    # audit trail — violating "anything affecting routing is visible in rules_fired".
+    decision = apply_policy(
+        make_referral(),
+        make_signals(red_flags=["rectal bleeding"]),
+        make_proposal(priority=Priority.URGENT, priority_confidence=0.50),
+        THRESHOLDS,
+    )
+    assert decision.tier == Tier.HUMAN_REVIEW
+    assert any("red_flag" in r.lower() for r in decision.rules_fired)
+    assert not any("confidence" in r.lower() for r in decision.rules_fired)
+    assert decision.recommended_priority.rank >= Priority.URGENT.rank
+
+
+# ---------------------------------------------------------------------------
+# GP-stated priority floor — the GP's stated urgency is a lower bound the model
+# may never drop below autonomously. Distinct source from red flags (the letter's
+# clinical content), so it gets its own rule name in the audit trail. This is the
+# fix for REF-004: GP marked urgent, no red flag fired, model proposed Routine.
+# ---------------------------------------------------------------------------
+
+def test_gp_stated_urgent_with_routine_proposal_returns_human_review():
+    referral = ReferralInput(
+        referral_id="TEST-GP", text=VALID_REFERRAL_TEXT, source="test",
+        gp_stated_priority=Priority.URGENT,
+    )
+    decision = apply_policy(
+        referral,
+        make_signals(),  # no red flags
+        make_proposal(priority=Priority.ROUTINE),
+        THRESHOLDS,
+    )
+    assert decision.tier == Tier.HUMAN_REVIEW
+    assert "gp_stated_priority_floor" in decision.rules_fired
+    assert decision.recommended_priority.rank >= Priority.URGENT.rank
+
+
+def test_gp_stated_priority_floor_never_downgrades_recommended_priority():
+    # GP says 2WW, model proposes Routine, no red flag → recommended must be 2WW.
+    referral = ReferralInput(
+        referral_id="TEST-GP2", text=VALID_REFERRAL_TEXT, source="test",
+        gp_stated_priority=Priority.TWO_WEEK_WAIT,
+    )
+    decision = apply_policy(
+        referral,
+        make_signals(),
+        make_proposal(priority=Priority.ROUTINE),
+        THRESHOLDS,
+    )
+    assert decision.recommended_priority == Priority.TWO_WEEK_WAIT
+    assert "gp_stated_priority_floor" in decision.rules_fired
+
+
+def test_gp_stated_routine_does_not_block_clean_auto_route():
+    # The floor must be narrow: GP routine + model routine must still auto-route.
+    referral = ReferralInput(
+        referral_id="TEST-GP3", text=VALID_REFERRAL_TEXT, source="test",
+        gp_stated_priority=Priority.ROUTINE,
+    )
+    decision = apply_policy(
+        referral,
+        make_signals(extraction_confidence=0.95),
+        make_proposal(
+            specialty="Dermatology",
+            priority=Priority.ROUTINE,
+            specialty_confidence=0.92,
+            priority_confidence=0.91,
+        ),
+        THRESHOLDS,
+    )
+    assert decision.tier == Tier.AUTO_ROUTE
+
+
+def test_gp_floor_does_not_fire_when_model_abstained_on_priority():
+    # Model proposed UNKNOWN priority (rank 0). The GP floor must NOT fire and
+    # mislabel this as a downgrade — the unknown gate owns an abstaining model.
+    referral = ReferralInput(
+        referral_id="TEST-GP4", text=VALID_REFERRAL_TEXT, source="test",
+        gp_stated_priority=Priority.ROUTINE,
+    )
+    decision = apply_policy(
+        referral,
+        make_signals(),
+        make_proposal(priority=Priority.UNKNOWN),
+        THRESHOLDS,
+    )
+    assert decision.tier == Tier.HUMAN_REVIEW
+    assert "gp_stated_priority_floor" not in decision.rules_fired
+
+
+def test_no_gp_stated_priority_does_not_fire_floor():
+    # gp_stated_priority None -> UNKNOWN (rank 0) -> never exceeds a proposal.
+    decision = apply_policy(
+        make_referral(),  # no gp_stated_priority
+        make_signals(extraction_confidence=0.95),
+        make_proposal(
+            specialty="Dermatology",
+            priority=Priority.ROUTINE,
+            specialty_confidence=0.92,
+            priority_confidence=0.91,
+        ),
+        THRESHOLDS,
+    )
+    assert decision.tier == Tier.AUTO_ROUTE
+    assert "gp_stated_priority_floor" not in decision.rules_fired
+
+
 # ---------------------------------------------------------------------------
 # 11-12: MVP scope — Urgent and Two-Week Wait always go to human review
 # ---------------------------------------------------------------------------

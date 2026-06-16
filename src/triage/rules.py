@@ -1,12 +1,13 @@
 """Deterministic safety rules for the referral-triage POC.
 
-Five functions; no mutable state; no ML:
+No mutable state; no ML:
 
-    is_too_short(text)              -> bool
-    is_non_referral(text)           -> bool
-    detect_red_flags(text)          -> list[str]  canonical flag names
-    priority_max(a, b)              -> Priority   uses .rank, never strings
-    red_flag_priority_floor(flags)  -> Priority   minimum priority implied by flags
+    is_too_short(text)               -> bool
+    is_non_referral(text)            -> bool
+    detect_red_flags(text)           -> list[str]  canonical flag names
+    red_flag_evidence_phrases(text)  -> dict        canonical flag -> matched surface phrase
+    priority_max(a, b)               -> Priority    uses .rank, never strings
+    red_flag_priority_floor(flags)   -> Priority    minimum priority implied by flags
 
 These run before and after the model. The pre-filtering gate (is_too_short,
 is_non_referral) runs in policy.py before extraction. detect_red_flags and
@@ -134,23 +135,25 @@ def is_non_referral(text: str) -> bool:
     return any(kw in lower for kw in _ADMIN_KEYWORDS)
 
 
-def detect_red_flags(text: str) -> list[str]:
-    """Return sorted canonical red-flag names found in text, with negation suppression.
+def _matched_flags(text: str) -> dict[str, str]:
+    """Map each detected canonical flag to the surface phrase that matched it.
 
-    Iterates token-by-token so negation is checked by position, not regex lookahead.
+    Single source of matching truth: both detect_red_flags (names) and
+    red_flag_evidence_phrases (surface text) build on this. Iterates
+    token-by-token so negation is checked by position, not regex lookahead.
     REF-007 ("No frank rectal bleeding") and REF-008 ("no chest pain at rest")
-    are the regression cases: both must return no flags despite containing the
+    are the regression cases: both must yield no flags despite containing the
     keyword phrases.
 
-    Hedged weight loss ("may be related to reduced appetite") is NOT detected here
-    by design — extract.py is responsible for that clinical distinction.
+    Hedged weight loss ("may be related to reduced appetite") is NOT detected
+    here by design — extract.py is responsible for that clinical distinction.
     """
     tokens = _tokenise(text)
     n = len(tokens)
-    found: set[str] = set()
+    matched: dict[str, str] = {}
 
     for phrase, canonical in _FLAG_PATTERNS:
-        if canonical in found:
+        if canonical in matched:
             continue  # already have this flag; skip cheaper patterns for it
         phrase_tokens = phrase.split()
         phrase_len = len(phrase_tokens)
@@ -158,10 +161,26 @@ def detect_red_flags(text: str) -> list[str]:
         for i in range(n - phrase_len + 1):
             if tokens[i: i + phrase_len] == phrase_tokens:
                 if not _is_negated(tokens, i):
-                    found.add(canonical)
+                    matched[canonical] = phrase
                 break  # stop scanning for this phrase after first match
 
-    return sorted(found)
+    return matched
+
+
+def detect_red_flags(text: str) -> list[str]:
+    """Return sorted canonical red-flag names found in text, with negation suppression."""
+    return sorted(_matched_flags(text))
+
+
+def red_flag_evidence_phrases(text: str) -> dict[str, str]:
+    """Map each detected canonical flag to the surface phrase that matched it.
+
+    Lets the extractor quote real letter text as evidence instead of the
+    canonical name — the canonical often differs from the surface form
+    ("breathlessness" -> "shortness of breath"), and quoting a name that never
+    appears in the letter would fabricate evidence. No fact without evidence.
+    """
+    return _matched_flags(text)
 
 
 def priority_max(a: Priority, b: Priority) -> Priority:
