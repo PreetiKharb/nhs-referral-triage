@@ -24,6 +24,23 @@ from triage.schemas import Priority
 
 # ---------------------------------------------------------------------------
 # Configuration — clinical thresholds and keyword lists
+#
+# CLINICAL ASSUMPTION — NOT VALIDATED. Every mapping below (which red flags
+# exist, and whether each implies Urgent or Two-Week Wait) is an engineering
+# placeholder authored WITHOUT clinical sign-off. They are illustrative
+# simplifications of NICE-style criteria, not a clinical ruleset.
+#
+# Known gaps a clinician would flag immediately, for example:
+#   - isolated rectal bleeding in an older patient is itself a NICE lower-GI
+#     2WW criterion, but here it only reaches Urgent unless paired with weight
+#     loss. That is a recall gap in these rules, not in the architecture.
+#
+# In production these tables are NOT owned by engineering. They belong to a
+# clinical safety officer, are encoded as versioned, reviewed config (not code),
+# and are validated against current NICE guidance and a labelled referral set
+# with red-flag-recall as the gating metric. The rules live in this isolated,
+# tested module precisely so that ownership handoff is a config-and-review
+# process, not a code change.
 # ---------------------------------------------------------------------------
 
 # Referrals below this word count cannot carry enough clinical detail to route.

@@ -13,6 +13,23 @@ Design note: specialty_confidence and priority_confidence are kept separate
 because you can know the right team (high specialty confidence) while still
 being unsure about urgency (low priority confidence), and vice versa. Conflating
 them into one score would obscure which dimension drove a HUMAN_REVIEW decision.
+
+Production path (deliberately not built — the brief said model choice is out of
+scope, and a rule-based mock keeps the POC's behaviour fully inspectable):
+  - Replace this rule table with a classifier behind the SAME Proposal contract,
+    so nothing downstream changes — the same swap already demonstrated for
+    extraction via extract.py's --real backend.
+  - MVP-grade option: an LLM (e.g. Claude via the structured-outputs API, the
+    same messages.parse + Pydantic-schema approach used in extract.py) prompted
+    to return specialty, priority, alternatives and per-axis confidence. Cheap
+    to stand up, no training data needed, good for cold-start.
+  - Mature option: a supervised classifier (e.g. a fine-tuned transformer or a
+    gradient-boosted model over extracted features) trained on the labelled
+    golden dataset, once shadow mode has produced enough SME-reviewed examples.
+    Preferred long-term because it is cheaper per call, calibratable, and its
+    confidence scores can be validated against held-out accuracy.
+  - Either way the safety floor (rules.py) stays deterministic and OUTSIDE the
+    model: the classifier proposes, it never gets the final say on priority.
 """
 
 from __future__ import annotations
@@ -21,6 +38,15 @@ from triage.schemas import UNKNOWN_SPECIALTY, ClinicalSignals, Priority, Proposa
 
 # ---------------------------------------------------------------------------
 # Signal-to-routing maps (illustrative, not clinically validated)
+#
+# Two layers of assumption live in this file, both unvalidated:
+#   1. The signal->specialty/priority mappings (e.g. chest pain -> Cardiology/
+#      Urgent). These are engineering placeholders; in production they are
+#      either SME-authored config or a model trained on labelled referrals.
+#   2. The confidence numbers below (0.92, 0.88, 0.30 ...) are hand-picked
+#      constants, NOT calibrated probabilities. They exist so the confidence
+#      gate has something to gate on; their specific values are not meaningful
+#      until a real model produces calibrated scores against a labelled set.
 # ---------------------------------------------------------------------------
 
 _TWO_WEEK_WAIT_FLAGS = {"melanoma", "suspected cancer", "changing mole",

@@ -24,6 +24,13 @@ Design decisions (apply to both backends):
 - Hedged weight loss ("may be related to reduced appetite") is NOT a red flag.
   This is a clinical distinction; the keyword mock cannot make it, which is
   exactly why a real LLM extractor is the interesting upgrade (see README).
+
+ASSERTED, NOT CALIBRATED: the mock's confidence numbers (0.85, 0.90, 0.20 etc.)
+are hand-picked constants, not measured probabilities. A 0.90 here does NOT mean
+"right 90% of the time" — only a real model with a calibrated output head can
+claim that, and validating it needs a labelled holdout set (out of scope here).
+The confidence-gating architecture is real; the specific numbers it gates on are
+placeholders until calibrated. See README, "With more time".
 """
 
 from __future__ import annotations
