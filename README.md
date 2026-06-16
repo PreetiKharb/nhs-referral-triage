@@ -48,16 +48,16 @@ pip install -r requirements.txt
 
 python scripts/run_triage.py   # runs all 10 synthetic letters, writes audit_log.jsonl
 python scripts/run_triage.py --real   # same pipeline, real Claude extraction (see note below)
+python scripts/run_triage.py --stats  # adds an observability report (routing mix, distributions)
 python scripts/run_eval.py     # scores predictions against gold labels
-pytest                         # 51 tests, all passing
+pytest                         # 59 tests, all passing
 ```
 
 The default (`mock`) backend is deterministic and offline. The `--real` flag
 swaps only the extraction backend for a real Claude call via the structured-
 outputs API; it needs an `ANTHROPIC_API_KEY` (copy `.env.example` to `.env`) and
 falls back to the mock with a notice if no key is present. See *A real LLM
-backend, and what it exposed* below — the result is deliberately instructive,
-not a clean pass.
+backend, the coupling it exposed, and the fix* below.
 
 ## What you'll see
 
@@ -119,7 +119,7 @@ The safety violations in the eval output are the intended result, not a bug. The
 
 Every decision is appended to `audit_log.jsonl` with: letter ID, extracted signals + evidence spans, rules fired, model proposal, confidence, threshold config version, and final routing.
 
-## A real LLM backend, and what it exposed
+## A real LLM backend, the coupling it exposed, and the fix
 
 `extract.py` ships two interchangeable backends behind the same `ClinicalSignals`
 schema: the deterministic mock (default) and a real Claude call via the
@@ -127,55 +127,105 @@ structured-outputs API (`--real`). The real backend is constrained to the same
 Pydantic output schema the mock produces, so the model cannot free-text its way
 around the contract.
 
-Running `--real` proved the structural claim — and exposed a real coupling bug,
-which is the more useful result:
+Running `--real` first proved the structural claim, then exposed a real coupling
+bug — which was the more useful result, and which is now fixed:
 
 - **The schema contract held.** Swapping the backend changed nothing structurally.
   Valid `ClinicalSignals` flowed through rules, policy, audit, and routing with
   no code changes and no crashes. The interface did its job.
-- **The real extractor is genuinely better at extraction.** It correctly caught
-  unexplained rectal bleeding and new shortness of breath with grounded evidence
-  spans, and correctly suppressed negated and hedged findings — the things the
-  keyword mock can only approximate.
-- **But most specialties came back `Unknown` → HUMAN_REVIEW.** Not an LLM failure:
-  a downstream failure in `classify.py`, which does exact-string matching on the
-  symptom *values* the mock happens to emit (`"skin tag"`, `"rash"`). The LLM
-  writes richer phrasings (`"benign skin tag on the right forearm"`), which the
-  classifier's literal match misses.
+- **The real extractor is genuinely better at extraction.** It caught unexplained
+  rectal bleeding and new shortness of breath with grounded evidence spans, and
+  suppressed negated and hedged findings — things the keyword mock can only
+  approximate.
+- **But initially most specialties came back `Unknown` → HUMAN_REVIEW.** Not an
+  LLM failure: `classify.py` did exact-string matching on the symptom *values*
+  the mock happens to emit (`"skin tag"`). The LLM writes richer phrasings
+  (`"benign skin tag on the right forearm"`), which the literal match missed.
 
-**The lesson:** a typed schema guarantees *shape*, not *value semantics*. The
-classifier was implicitly coupled to the mock extractor's exact vocabulary, not
-just to the `ClinicalSignals` type. The fix is a shared controlled vocabulary the
-extractor maps into (an enum or ontology for symptoms and specialties), enforced
-and measured by the eval harness — not another type annotation. This is exactly
-the kind of seam that looks decoupled until you swap a component across it.
+**The lesson, and the fix.** A typed schema guarantees *shape*, not *value
+semantics*. The classifier was implicitly coupled to the mock extractor's exact
+vocabulary, not just to the `ClinicalSignals` type. The fix is `canonicalize.py`:
+a thin controlled-vocabulary layer between extraction and classification that
+maps whatever free text an extractor produces onto a fixed set of terms the
+classifier keys off. Evidence text is preserved verbatim so the audit trail
+still shows the extractor's original wording. With it in place, `--real` and the
+mock now produce the same routing distribution (3 auto / 5 review / 2 exception).
+In production this seam is where a clinical terminology service (SNOMED CT) would
+sit; isolating it to one module means that swap stays local.
 
-The failure is safe in direction: every misclassification fell to HUMAN_REVIEW,
-never to an unsafe auto-route. The system degraded toward caution, which is the
-behaviour the architecture is designed to guarantee.
+Writing the fix also caught a bug *in the fix*: a naive substring map sent
+"lower GI" to Gastroenterology because the bare token "gi" matched first. The
+canonicalisation test suite pinned the correct mapping and forced word-specific
+variants — a small reminder that controlled vocabularies are themselves
+error-prone and need their own tests.
+
+The original failure was safe in direction: every misclassification fell to
+HUMAN_REVIEW, never to an unsafe auto-route. The system degraded toward caution,
+which is the behaviour the architecture is designed to guarantee.
+
+## Scalability vectors
+
+Where this design strains as it grows, and which current choices help or hurt:
+
+**Volume (hundreds → thousands of letters/day).** The pipeline is a stateless
+per-letter function, so horizontal scale is a queue-and-worker problem, not a
+redesign — the brief is right that a 500/day trust does not need Kafka; a simple
+queue with a worker pool suffices, and the audit log is already append-only so
+concurrent writers need only an append-safe sink (managed log store or per-worker
+shards merged downstream). The real cost ceiling under `--real` is the LLM call
+per letter; prompt caching, batching, and a cheap first-pass model that escalates
+only uncertain letters to a stronger model are the levers.
+
+**Specialties (5 → all).** This is where the current design strains first. The
+classifier and the controlled vocabulary are hand-authored; every new specialty
+is new mapping logic and new red-flag rules. That does not scale by editing
+dictionaries forever. The path is to move classification to a model trained on
+labelled referrals and keep only the *safety* rules hand-authored — the red-flag
+floor stays deterministic and small even as specialties multiply, because
+suspected-cancer pathways are a bounded set, while specialty routing is open-ended.
+The canonicalisation seam is what makes that migration local.
+
+**Sites (one trust → many).** Routing policy and thresholds are already config,
+not code, so per-site variation is config authoring rather than re-architecture —
+local pathways, local specialty taxonomies, local thresholds. What does *not*
+scale for free is evaluation: each site needs its own labelled set and its own
+calibration, because triage norms differ. The constraint we accept now is a
+single threshold file and a single eval set; the multi-site version needs
+per-site config namespaces and per-site eval suites, which the versioned-config
+design anticipates but does not yet implement.
+
+**The decision that constrains us most.** Hand-authored classification logic is
+the deliberate MVP shortcut that will need replacing first. It is cheap and fully
+auditable at 5 specialties; it becomes the bottleneck at 30. The architecture is
+built so that swap is contained — model behind the `Proposal` contract,
+vocabulary behind `canonicalize.py`, safety behind `rules.py` — but the swap is
+inevitable and is the first thing on the post-MVP roadmap.
 
 ## Repository structure
 
 ```
 referral-triage-poc/
 ├── scripts/
-│   ├── run_triage.py            # CLI entry point
+│   ├── run_triage.py            # CLI entry point (--real, --stats)
 │   └── run_eval.py              # Accuracy and safety metrics
 ├── src/triage/
 │   ├── schemas.py               # Typed Pydantic contracts incl. evidence spans
-│   ├── extract.py               # Extraction (mock — keyword matching with negation)
+│   ├── extract.py               # Extraction — mock (keyword + negation) or real LLM
+│   ├── canonicalize.py          # Controlled-vocab layer between extract and classify
 │   ├── classify.py              # Specialty + priority proposal with confidence
 │   ├── rules.py                 # Red-flag rules, never-downgrade enforcement
-│   ├── policy.py                # Threshold check → Tier 1 / Tier 2 / Exception
+│   ├── policy.py                # Pre-filter + gates → Tier 1 / Tier 2 / Exception
+│   ├── metrics.py               # Observability surface (routing mix, distributions)
 │   ├── audit.py                 # JSONL decision log
-│   └── pipeline.py              # Wires the four stages
+│   └── pipeline.py              # Wires the stages: extract → canonicalize → classify → policy → audit
 ├── config/
 │   └── thresholds.yaml          # Routing thresholds — policy as config, not code
 ├── data/
 │   └── synthetic_letters.json   # 10 synthetic letters with gold labels
 └── tests/
     ├── test_rules.py            # 28 tests — safety floor tested first
-    └── test_policy.py           # 23 tests — written before policy.py
+    ├── test_policy.py           # 23 tests — written before policy.py
+    └── test_canonicalize.py     #  8 tests — controlled-vocab mapping
 ```
 
 ## Design decisions worth noticing
@@ -192,6 +242,8 @@ referral-triage-poc/
 
 **`AuditRecord` version fields have no defaults.** `audit.py` must pass `pipeline_version`, `ruleset_version`, and `threshold_version` explicitly. A missing version fails loudly rather than silently stamping a stale value.
 
+**A controlled-vocabulary layer (`canonicalize.py`) sits between extraction and classification.** It maps free-text symptom and specialty strings onto a fixed vocabulary, so the classifier depends on a known value-set rather than on whatever exact wording a given extractor happens to emit. This is what lets the mock and real-LLM backends produce identical routing. Evidence text is preserved verbatim for the audit trail.
+
 ## What this deliberately does NOT do
 
 - No real patient data — all letters are synthetic, invented for this POC
@@ -207,7 +259,8 @@ Each of these has a designed home in the full architecture; their absence here i
 
 - **Calibration measurement** — does 0.9 confidence mean right 90% of the time on a labelled set? The thresholds are asserted, not validated.
 - **A golden dataset** (~100 labelled letters) and an eval harness gating any prompt or rule change.
-- **GP urgency signal in the classifier** — `gp_stated_urgency` is extracted but the mock classifier ignores it. REF-004 is the failure case.
+- **GP urgency signal in the classifier** — `gp_stated_urgency` is extracted but the classifier ignores it; REF-002 and REF-004 are the failure cases (a GP-stated priority should inform, though never lower, the proposal).
+- **Replace hand-authored classification with a trained model** — the controlled vocabulary and rule-based classifier are the deliberate MVP shortcut; see *Scalability vectors*.
 - **Property-based tests on `policy.py`** — the routing function is where silent failures would hide.
 - **Reviewer-facing rendering of evidence spans** — the audit log stores them; the interface doesn't exist yet.
 
