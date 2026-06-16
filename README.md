@@ -12,15 +12,30 @@ This is a toy. It exists to prove three architectural claims, not to triage real
 
 ```mermaid
 flowchart TD
-    L[Synthetic letter] --> E["Extract (mock LLM)\nsignals + evidence spans"]
+    L[Synthetic letter] --> P{"Input pre-filter\ntoo short? not a referral?"}
+    P -->|unusable| EX["Exception\noperational queue (non-clinical)"]
+    P -->|usable| E["Extract (mock or real LLM)\nsignals + evidence spans"]
     E --> C["Classify\nspecialty + priority + confidence"]
-    C --> R["Rules (deterministic)\nred flag escalates · never downgrade"]
-    R --> G["Confidence gate\nthresholds from config"]
-    G -->|confident, routine, clean| T1[Tier 1 · auto-route]
-    G -->|uncertain or escalated| T2[Tier 2 · human review]
-    G -->|not a usable referral| EX[Exceptions]
-    R -.every decision.-> A[(Audit log · append-only JSONL)]
+    C --> S{"Safety floor (deterministic)\nred flag escalates · never downgrade"}
+    S -->|red flag present| T2
+    S -->|no red flag| G{"Confidence gate\nextraction / specialty / priority\nthresholds from config"}
+    G -->|below any threshold,\nor Unknown| T2
+    G -->|above thresholds| M{"MVP scope\nRoutine only auto-routes"}
+    M -->|Urgent / 2WW| T2
+    M -->|clean Routine| T1["Tier 1 · auto-route"]
+    T2["Tier 2 · human review (clinical)"]
+    P -.-> A[(Audit log · append-only JSONL)]
+    S -.-> A
+    G -.-> A
+    M -.-> A
+    EX -.-> A
+    T1 -.-> A
+    T2 -.-> A
 ```
+
+The gates run in a deliberate order, and the order encodes the safety stance. The **safety floor** (`rules.py`) runs *first*, before the confidence gate, and is the only gate that can raise priority — it reads config but cannot be *softened* by it. The **confidence gate** is the standard abstention mechanism: extraction, specialty, and priority confidence are each checked against versioned thresholds, and anything below — or any `Unknown` — abstains to human review. The **MVP scope gate** is the last narrowing: even a clean, confident, red-flag-free case only auto-routes if it is Routine. The separation matters because the two mechanisms answer different questions: confidence asks "is the model sure?" (tunable), the safety floor asks "is this dangerous regardless of how sure the model is?" (not tunable). Conflating them — e.g. letting high confidence wave a case past a red flag — is the failure mode the ordering exists to prevent.
+
+**Two kinds of human, two kinds of queue.** *Exception* is not a triage outcome — it means the input is not a usable referral (too short, or an admin email), and it routes to an operational queue where someone chases the missing letter or bounces the misrouted email. *Tier 2 human review* is the clinical queue: a real referral the system will not auto-route because it is uncertain, escalated by a red flag, or outside MVP auto-route scope. Both are logged; nothing is ever silently dropped. The worst case for any input is "a human looks at it", never "the system discards it" — that is what *fail closed* means here.
 
 The model proposes (Extract, Classify); deterministic code disposes (Rules, Gate). Rules run *after* the model and can only escalate or hold priority — never downgrade — so the safety property is structural, not a behaviour the model is trusted to respect.
 
@@ -32,9 +47,17 @@ source .venv/bin/activate
 pip install -r requirements.txt
 
 python scripts/run_triage.py   # runs all 10 synthetic letters, writes audit_log.jsonl
+python scripts/run_triage.py --real   # same pipeline, real Claude extraction (see note below)
 python scripts/run_eval.py     # scores predictions against gold labels
 pytest                         # 51 tests, all passing
 ```
+
+The default (`mock`) backend is deterministic and offline. The `--real` flag
+swaps only the extraction backend for a real Claude call via the structured-
+outputs API; it needs an `ANTHROPIC_API_KEY` (copy `.env.example` to `.env`) and
+falls back to the mock with a notice if no key is present. See *A real LLM
+backend, and what it exposed* below — the result is deliberately instructive,
+not a clean pass.
 
 ## What you'll see
 
@@ -95,6 +118,41 @@ The safety violations in the eval output are the intended result, not a bug. The
 **REF-008 (over-escalated to human review):** The mock couldn't distinguish "stable angina, routine follow-up" from "new cardiac symptoms." A real LLM reads clinical context; the mock reads keywords.
 
 Every decision is appended to `audit_log.jsonl` with: letter ID, extracted signals + evidence spans, rules fired, model proposal, confidence, threshold config version, and final routing.
+
+## A real LLM backend, and what it exposed
+
+`extract.py` ships two interchangeable backends behind the same `ClinicalSignals`
+schema: the deterministic mock (default) and a real Claude call via the
+structured-outputs API (`--real`). The real backend is constrained to the same
+Pydantic output schema the mock produces, so the model cannot free-text its way
+around the contract.
+
+Running `--real` proved the structural claim — and exposed a real coupling bug,
+which is the more useful result:
+
+- **The schema contract held.** Swapping the backend changed nothing structurally.
+  Valid `ClinicalSignals` flowed through rules, policy, audit, and routing with
+  no code changes and no crashes. The interface did its job.
+- **The real extractor is genuinely better at extraction.** It correctly caught
+  unexplained rectal bleeding and new shortness of breath with grounded evidence
+  spans, and correctly suppressed negated and hedged findings — the things the
+  keyword mock can only approximate.
+- **But most specialties came back `Unknown` → HUMAN_REVIEW.** Not an LLM failure:
+  a downstream failure in `classify.py`, which does exact-string matching on the
+  symptom *values* the mock happens to emit (`"skin tag"`, `"rash"`). The LLM
+  writes richer phrasings (`"benign skin tag on the right forearm"`), which the
+  classifier's literal match misses.
+
+**The lesson:** a typed schema guarantees *shape*, not *value semantics*. The
+classifier was implicitly coupled to the mock extractor's exact vocabulary, not
+just to the `ClinicalSignals` type. The fix is a shared controlled vocabulary the
+extractor maps into (an enum or ontology for symptoms and specialties), enforced
+and measured by the eval harness — not another type annotation. This is exactly
+the kind of seam that looks decoupled until you swap a component across it.
+
+The failure is safe in direction: every misclassification fell to HUMAN_REVIEW,
+never to an unsafe auto-route. The system degraded toward caution, which is the
+behaviour the architecture is designed to guarantee.
 
 ## Repository structure
 

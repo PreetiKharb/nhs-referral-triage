@@ -20,12 +20,18 @@ def process_referral(
     referral: ReferralInput,
     thresholds: dict | None = None,
     audit_path: str = "audit_log.jsonl",
+    backend: str = "mock",
 ) -> tuple[ClinicalSignals, Proposal, Decision, AuditRecord]:
-    """Run one referral through the full pipeline and write an audit record."""
+    """Run one referral through the full pipeline and write an audit record.
+
+    backend selects the extraction implementation ("mock" or "llm"). Everything
+    downstream of extraction is identical regardless of backend — that is the
+    point of the schema contract.
+    """
     if thresholds is None:
         thresholds = load_thresholds()
 
-    signals = extract_signals(referral)
+    signals = extract_signals(referral, backend=backend)
     proposal = classify(signals)
     decision = apply_policy(referral, signals, proposal, thresholds)
 

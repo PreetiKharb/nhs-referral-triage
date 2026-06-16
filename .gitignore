@@ -4,3 +4,4 @@ __pycache__/
 .pytest_cache/
 audit_log.jsonl
 eval_audit.jsonl
+.env

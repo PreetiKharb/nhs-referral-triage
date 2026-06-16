@@ -1,13 +1,20 @@
 """Demo script — runs all synthetic letters through the full pipeline.
 
 Usage:
-    python scripts/run_triage.py
+    python scripts/run_triage.py            # mock extraction (default, offline)
+    python scripts/run_triage.py --real     # real Claude extraction (needs ANTHROPIC_API_KEY)
+
+The --real flag swaps only the extraction backend. Everything downstream —
+rules, policy gate, audit, routing — is byte-for-byte the same code path. That
+is the modularity claim made demonstrable: the model is a dependency behind a
+schema contract, not the architecture.
 
 Writes audit_log.jsonl and prints a summary table.
 """
 
 from __future__ import annotations
 
+import argparse
 import json
 import sys
 from pathlib import Path
@@ -21,6 +28,15 @@ from triage.schemas import ReferralInput
 
 
 def main() -> None:
+    parser = argparse.ArgumentParser(description="Run synthetic referrals through the triage pipeline.")
+    parser.add_argument(
+        "--real",
+        action="store_true",
+        help="Use the real Claude extraction backend (falls back to mock if no API key).",
+    )
+    args = parser.parse_args()
+    backend = "llm" if args.real else "mock"
+
     data_path = Path("data/synthetic_letters.json")
     if not data_path.exists():
         print(f"ERROR: {data_path} not found. Run from the project root.")
@@ -29,6 +45,7 @@ def main() -> None:
     letters = json.loads(data_path.read_text(encoding="utf-8"))
     thresholds = load_thresholds()
 
+    print(f"Extraction backend: {backend}")
     col = "{:<12} {:<20} {:<16} {:<14} {}"
     header = col.format("ID", "Specialty", "Priority", "Tier", "Reason")
     print(header)
@@ -41,7 +58,7 @@ def main() -> None:
             k: v for k, v in raw.items()
             if k in ReferralInput.model_fields
         })
-        _, _, decision, _ = process_referral(referral, thresholds)
+        _, _, decision, _ = process_referral(referral, thresholds, backend=backend)
 
         specialty = decision.recommended_specialty or "—"
         priority = decision.recommended_priority.value if decision.recommended_priority else "—"
